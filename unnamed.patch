@@ -1,0 +1,535 @@
+Index: src/main/java/com/example/autoprreviewer/util/OAuth2TokenUtil.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/util/OAuth2TokenUtil.java b/src/main/java/com/example/autoprreviewer/util/OAuth2TokenUtil.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/util/OAuth2TokenUtil.java	
+@@ -0,0 +1,36 @@
++package com.example.autoprreviewer.util;
++
++import org.springframework.security.core.Authentication;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
++import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
++import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
++import org.springframework.stereotype.Component;
++
++@Component
++public class OAuth2TokenUtil {
++
++    private final OAuth2AuthorizedClientService authorizedClientService;
++
++    public OAuth2TokenUtil(OAuth2AuthorizedClientService authorizedClientService) {
++        this.authorizedClientService = authorizedClientService;
++    }
++
++    /**
++     * 현재 인증된 사용자의 액세스 토큰을 반환합니다.
++     * 토큰이 없으면 null을 반환합니다.
++     */
++    public String getAccessToken() {
++        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
++        if (authentication instanceof OAuth2AuthenticationToken) {
++            OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
++            // OAuth2AuthorizedClientService를 통해 현재 클라이언트를 로드합니다.
++            OAuth2AuthorizedClient client = authorizedClientService.loadAuthorizedClient(
++                    oauthToken.getAuthorizedClientRegistrationId(), oauthToken.getName());
++            if (client != null && client.getAccessToken() != null) {
++                return client.getAccessToken().getTokenValue();
++            }
++        }
++        return null;
++    }
++}
+Index: src/main/java/com/example/autoprreviewer/model/RepositoryInfo.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/model/RepositoryInfo.java b/src/main/java/com/example/autoprreviewer/model/RepositoryInfo.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/model/RepositoryInfo.java	
+@@ -0,0 +1,53 @@
++package com.example.autoprreviewer.model;
++
++import jakarta.persistence.*;
++
++@Entity
++public class RepositoryInfo {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    private String repoId;
++    private String name;
++    private String fullName;
++    private String owner;
++
++    // 기타 필요한 필드 추가 (예: webhook 등록 상태 등)
++
++    // 기본 생성자, getter, setter
++    public RepositoryInfo() {
++    }
++
++    public Long getId() {
++        return id;
++    }
++    public void setId(Long id) {
++        this.id = id;
++    }
++    public String getRepoId() {
++        return repoId;
++    }
++    public void setRepoId(String repoId) {
++        this.repoId = repoId;
++    }
++    public String getName() {
++        return name;
++    }
++    public void setName(String name) {
++        this.name = name;
++    }
++    public String getFullName() {
++        return fullName;
++    }
++    public void setFullName(String fullName) {
++        this.fullName = fullName;
++    }
++    public String getOwner() {
++        return owner;
++    }
++    public void setOwner(String owner) {
++        this.owner = owner;
++    }
++}
+Index: src/main/java/com/example/autoprreviewer/config/SecurityConfig.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/config/SecurityConfig.java b/src/main/java/com/example/autoprreviewer/config/SecurityConfig.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/config/SecurityConfig.java	
+@@ -0,0 +1,24 @@
++package com.example.autoprreviewer.config;
++
++import org.springframework.context.annotation.Bean;
++import org.springframework.context.annotation.Configuration;
++import org.springframework.security.config.Customizer;
++import org.springframework.security.config.annotation.web.builders.HttpSecurity;
++import org.springframework.security.web.SecurityFilterChain;
++
++@Configuration
++public class SecurityConfig {
++
++    @Bean
++    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
++        http
++                // 허용할 URL 설정 (루트, 로그인 페이지 등은 누구나 접근 가능)
++                .authorizeHttpRequests(authorize -> authorize
++                        .requestMatchers("/", "/login**", "/error**").permitAll()
++                        .anyRequest().authenticated()
++                )
++                // OAuth2 로그인 설정 (기본 로그인 페이지 사용)
++                .oauth2Login(Customizer.withDefaults());
++        return http.build();
++    }
++}
+Index: src/main/java/com/example/autoprreviewer/service/RepositoryService.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/service/RepositoryService.java b/src/main/java/com/example/autoprreviewer/service/RepositoryService.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/service/RepositoryService.java	
+@@ -0,0 +1,35 @@
++package com.example.autoprreviewer.service;
++
++import com.example.autoprreviewer.integration.GitHubClient;
++import com.example.autoprreviewer.model.RepositoryInfo;
++import com.example.autoprreviewer.repository.RepositoryInfoRepository;
++import org.springframework.stereotype.Service;
++import reactor.core.publisher.Mono;
++
++import java.util.Arrays;
++import java.util.List;
++
++@Service
++public class RepositoryService {
++
++    private final GitHubClient gitHubClient;
++    private final RepositoryInfoRepository repositoryInfoRepository;
++
++    public RepositoryService(GitHubClient gitHubClient, RepositoryInfoRepository repositoryInfoRepository) {
++        this.gitHubClient = gitHubClient;
++        this.repositoryInfoRepository = repositoryInfoRepository;
++    }
++
++    public Mono<List<Object>> fetchUserRepositories(String accessToken) {
++        return gitHubClient.getUserRepositories(accessToken)
++                .map(Arrays::asList);
++    }
++
++    public RepositoryInfo registerRepository(RepositoryInfo repositoryInfo) {
++        return repositoryInfoRepository.save(repositoryInfo);
++    }
++
++    public Mono<String> registerWebhook(String accessToken, String owner, String repo, String webhookUrl) {
++        return gitHubClient.registerWebhook(accessToken, owner, repo, webhookUrl);
++    }
++}
+Index: src/main/java/com/example/autoprreviewer/controller/HomeController.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/controller/HomeController.java b/src/main/java/com/example/autoprreviewer/controller/HomeController.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/controller/HomeController.java	
+@@ -0,0 +1,19 @@
++package com.example.autoprreviewer.controller;
++
++import org.springframework.security.core.annotation.AuthenticationPrincipal;
++import org.springframework.security.oauth2.core.user.OAuth2User;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++@RestController
++public class HomeController {
++
++    @GetMapping("/")
++    public String home(@AuthenticationPrincipal OAuth2User principal) {
++        if (principal != null) {
++            // GitHub에서 가져오는 기본 사용자 속성은 'login'
++            return "Welcome, " + principal.getAttribute("login") + "!";
++        }
++        return "Welcome, Guest! <a href='/oauth2/authorization/github'>Login with GitHub</a>";
++    }
++}
+Index: src/main/java/com/example/autoprreviewer/controller/RepositoryController.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/controller/RepositoryController.java b/src/main/java/com/example/autoprreviewer/controller/RepositoryController.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/controller/RepositoryController.java	
+@@ -0,0 +1,48 @@
++package com.example.autoprreviewer.controller;
++
++import com.example.autoprreviewer.model.RepositoryInfo;
++import com.example.autoprreviewer.service.RepositoryService;
++import org.springframework.security.core.annotation.AuthenticationPrincipal;
++import org.springframework.security.oauth2.core.user.OAuth2User;
++import org.springframework.web.bind.annotation.*;
++import reactor.core.publisher.Mono;
++
++import java.util.List;
++
++@RestController
++@RequestMapping("/repositories")
++public class RepositoryController {
++
++    private final RepositoryService repositoryService;
++
++    public RepositoryController(RepositoryService repositoryService) {
++        this.repositoryService = repositoryService;
++    }
++
++    // 레포지토리 목록 조회: 현재 로그인한 사용자의 GitHub 액세스 토큰을 사용
++    @GetMapping("/list")
++    public Mono<List<Object>> getRepositories(@AuthenticationPrincipal OAuth2User principal) {
++        // OAuth2User에는 액세스 토큰이 기본 포함되어 있지 않으므로,
++        // 실제로는 SecurityContextHolder에서 OAuth2AuthenticationToken을 통해 액세스 토큰을 가져와야 합니다.
++        // 여기서는 간단하게 토큰을 직접 주입하는 형태로 가정
++        String accessToken = "EXTRACTED_ACCESS_TOKEN";  // 실제로는 필터나 서비스에서 추출
++        return repositoryService.fetchUserRepositories(accessToken);
++    }
++
++    // DB에 레포지토리 등록 (클라이언트에서 선택한 정보를 받아서 저장)
++    @PostMapping("/register")
++    public RepositoryInfo registerRepository(@RequestBody RepositoryInfo repositoryInfo) {
++        return repositoryService.registerRepository(repositoryInfo);
++    }
++
++    // Webhook 등록: 클라이언트가 요청할 때 호출 (예: 특정 레포에 대해)
++    @PostMapping("/registerWebhook")
++    public Mono<String> registerWebhook(@RequestParam String owner,
++                                        @RequestParam String repo,
++                                        @RequestParam String webhookUrl,
++                                        @AuthenticationPrincipal OAuth2User principal) {
++        // 실제 액세스 토큰 추출 로직 필요
++        String accessToken = "EXTRACTED_ACCESS_TOKEN";
++        return repositoryService.registerWebhook(accessToken, owner, repo, webhookUrl);
++    }
++}
+Index: src/main/java/com/example/autoprreviewer/repository/RepositoryInfoRepository.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/repository/RepositoryInfoRepository.java b/src/main/java/com/example/autoprreviewer/repository/RepositoryInfoRepository.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/repository/RepositoryInfoRepository.java	
+@@ -0,0 +1,10 @@
++package com.example.autoprreviewer.repository;
++
++import com.example.autoprreviewer.model.RepositoryInfo;
++import org.springframework.data.jpa.repository.JpaRepository;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public interface RepositoryInfoRepository extends JpaRepository<RepositoryInfo, Long> {
++    // 필요한 추가 쿼리 메서드 정의 가능
++}
+Index: src/main/java/com/example/autoprreviewer/integration/GitHubClient.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/com/example/autoprreviewer/integration/GitHubClient.java b/src/main/java/com/example/autoprreviewer/integration/GitHubClient.java
+new file mode 100644
+--- /dev/null	
++++ b/src/main/java/com/example/autoprreviewer/integration/GitHubClient.java	
+@@ -0,0 +1,111 @@
++package com.example.autoprreviewer.integration;
++
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.http.HttpHeaders;
++import org.springframework.http.MediaType;
++import org.springframework.stereotype.Component;
++import org.springframework.web.reactive.function.client.WebClient;
++import reactor.core.publisher.Mono;
++
++@Component
++public class GitHubClient {
++
++    private final WebClient webClient;
++
++    public GitHubClient(@Value("${github.api.base-url:https://api.github.com}") String baseUrl) {
++        this.webClient = WebClient.builder()
++                .baseUrl(baseUrl)
++                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
++                .build();
++    }
++
++    public Mono<Object[]> getUserRepositories(String accessToken) {
++        return webClient.get()
++                .uri("/user/repos")
++                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
++                .retrieve()
++                .bodyToMono(Object[].class);
++    }
++
++    // Webhook 등록 메서드 예시
++    public Mono<String> registerWebhook(String accessToken, String owner, String repo, String webhookUrl) {
++        // POST /repos/{owner}/{repo}/hooks
++        // Payload 예시:
++        /*
++          {
++             "name": "web",
++             "active": true,
++             "events": ["pull_request"],
++             "config": {
++                 "url": "https://your-webhook-url.com/github/webhook",
++                 "content_type": "json"
++             }
++          }
++         */
++        return webClient.post()
++                .uri("/repos/{owner}/{repo}/hooks", owner, repo)
++                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
++                .bodyValue(new WebhookRequest(webhookUrl))
++                .retrieve()
++                .bodyToMono(String.class);
++    }
++
++    // 내부 DTO 클래스 - Webhook 등록을 위한 요청 바디
++    public static class WebhookRequest {
++        private String name = "web";
++        private boolean active = true;
++        private String[] events = {"pull_request"};
++        private Config config;
++
++        public WebhookRequest(String url) {
++            this.config = new Config(url);
++        }
++
++        public static class Config {
++            private String url;
++            private String content_type = "json";
++
++            public Config(String url) {
++                this.url = url;
++            }
++            // getters/setters
++            public String getUrl() {
++                return url;
++            }
++            public void setUrl(String url) {
++                this.url = url;
++            }
++            public String getContent_type() {
++                return content_type;
++            }
++            public void setContent_type(String content_type) {
++                this.content_type = content_type;
++            }
++        }
++        // getters/setters
++        public String getName() {
++            return name;
++        }
++        public void setName(String name) {
++            this.name = name;
++        }
++        public boolean isActive() {
++            return active;
++        }
++        public void setActive(boolean active) {
++            this.active = active;
++        }
++        public String[] getEvents() {
++            return events;
++        }
++        public void setEvents(String[] events) {
++            this.events = events;
++        }
++        public Config getConfig() {
++            return config;
++        }
++        public void setConfig(Config config) {
++            this.config = config;
++        }
++    }
++}
+Index: src/main/resources/application.yml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+--- a/src/main/resources/application.yml	
++++ b/src/main/resources/application.yml	
+@@ -1,4 +1,18 @@
+ spring:
++  security:
++    oauth2:
++      client:
++        registration:
++          github:
++            client-id: Ov23liwZDQRRgigb5nuV
++            client-secret: 62f466a69a50f21c1c26f6ee22dfe5ce255dbfeb
++            scope: read:user, repo
++        provider:
++          github:
++            authorization-uri: https://github.com/login/oauth/authorize
++            token-uri: https://github.com/login/oauth/access_token
++            user-info-uri: https://api.github.com/user
++            user-name-attribute: login
+   datasource:
+     url: jdbc:mysql://localhost:3306/autoprreviewer?serverTimezone=UTC
+     username: root
+Index: src/main/resources/docker-compose.yml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/resources/docker-compose.yml b/src/main/resources/docker-compose.yml
+--- a/src/main/resources/docker-compose.yml	
++++ b/src/main/resources/docker-compose.yml	
+@@ -3,6 +3,7 @@
+   mysql:
+     image: mysql:8
+     container_name: my-mysql
++    restart: always
+     environment:
+       MYSQL_ROOT_PASSWORD: root_password
+       MYSQL_DATABASE: autoprreviewer
+@@ -12,12 +13,14 @@
+   redis:
+     image: redis:latest
+     container_name: my-redis
++    restart: always
+     ports:
+       - "6379:6379"
+ 
+   zookeeper:
+     image: confluentinc/cp-zookeeper:latest
+     container_name: my-zookeeper
++    restart: always
+     environment:
+       ZOOKEEPER_CLIENT_PORT: 2181
+     ports:
+@@ -26,6 +29,7 @@
+   kafka:
+     image: confluentinc/cp-kafka:latest
+     container_name: my-kafka
++    restart: always
+     environment:
+       KAFKA_ZOOKEEPER_CONNECT: my-zookeeper:2181
+       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+Index: .idea/dataSources.local.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/dataSources.local.xml b/.idea/dataSources.local.xml
+--- a/.idea/dataSources.local.xml	
++++ b/.idea/dataSources.local.xml	
+@@ -1,0 +1,19 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="dataSourceStorageLocal" created-in="IU-243.26053.27">
++    <data-source name="autoprreviewer@localhost" uuid="4e6ad077-a4f8-4f45-983c-f958746012f2">
++      <database-info product="MySQL" version="8.4.4" jdbc-version="4.2" driver-name="MySQL Connector/J" driver-version="mysql-connector-j-8.2.0 (Revision: 06a1f724497fd81c6a659131fda822c9e5085b6c)" dbms="MYSQL" exact-version="8.4.4" exact-driver-version="8.2">
++        <extra-name-characters>#@</extra-name-characters>
++        <identifier-quote-string>`</identifier-quote-string>
++      </database-info>
++      <case-sensitivity plain-identifiers="exact" quoted-identifiers="exact" />
++      <secret-storage>master_key</secret-storage>
++      <user-name>root</user-name>
++      <schema-mapping>
++        <introspection-scope>
++          <node kind="schema" qname="@" />
++        </introspection-scope>
++      </schema-mapping>
++    </data-source>
++  </component>
++</project>
+\ No newline at end of file
+Index: pom.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pom.xml b/pom.xml
+--- a/pom.xml	
++++ b/pom.xml	
+@@ -89,6 +89,15 @@
+             <artifactId>h2</artifactId>
+             <scope>runtime</scope>
+         </dependency>
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-oauth2-client</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-webflux</artifactId>
++        </dependency>
++
+     </dependencies>
+ 
+     <build>
