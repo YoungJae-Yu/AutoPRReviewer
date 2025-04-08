@@ -3,6 +3,7 @@ package com.example.autoprreviewer.controller;
 import com.example.autoprreviewer.model.RepositoryInfo;
 import com.example.autoprreviewer.service.RepositoryService;
 import com.example.autoprreviewer.util.OAuth2TokenUtil;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +17,8 @@ public class RepositoryController {
 
     private final RepositoryService repositoryService;
     private final OAuth2TokenUtil tokenUtil;
+    @Value("${webhook.github.url}")
+    private String webhookUrl;
 
     public RepositoryController(RepositoryService repositoryService, OAuth2TokenUtil tokenUtil) {
         this.repositoryService = repositoryService;
@@ -40,14 +43,16 @@ public class RepositoryController {
 
     // Webhook 등록: 클라이언트가 요청할 때 호출 (예: 특정 레포에 대해)
     @PostMapping("/registerWebhook")
-    public Mono<String> registerWebhook(@RequestParam String owner,
-                                        @RequestParam String repo,
-                                        @RequestParam String webhookUrl,
-                                        @AuthenticationPrincipal OAuth2User principal) {
+    public Mono<String> registerWebhook(
+            @RequestParam String owner,
+            @RequestParam String repo,
+            @AuthenticationPrincipal OAuth2User principal
+    ) {
         String accessToken = tokenUtil.getAccessToken();
         if (accessToken == null) {
             return Mono.error(new RuntimeException("액세스 토큰을 찾을 수 없습니다."));
         }
         return repositoryService.registerWebhook(accessToken, owner, repo, webhookUrl);
     }
+
 }

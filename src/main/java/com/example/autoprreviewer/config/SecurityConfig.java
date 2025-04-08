@@ -12,9 +12,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .csrf(csrf -> csrf.disable())// 개발 테스트를 위한 csrf 비활성화
                 // 허용할 URL 설정 (루트, 로그인 페이지 등은 누구나 접근 가능)
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/", "/login**", "/error**").permitAll()
+                        .requestMatchers("/", "/login**", "/error**", "/repositories/**", "/webhook/github").permitAll()
                         .anyRequest().authenticated()
                 )
                 // OAuth2 로그인 설정 (기본 로그인 페이지 사용)

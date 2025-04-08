@@ -7,6 +7,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 @Component
 public class GitHubClient {
 
@@ -27,28 +31,49 @@ public class GitHubClient {
                 .bodyToMono(Object[].class);
     }
 
-    // Webhook 등록 메서드 예시
     public Mono<String> registerWebhook(String accessToken, String owner, String repo, String webhookUrl) {
-        // POST /repos/{owner}/{repo}/hooks
-        // Payload 예시:
-        /*
-          {
-             "name": "web",
-             "active": true,
-             "events": ["pull_request"],
-             "config": {
-                 "url": "https://your-webhook-url.com/github/webhook",
-                 "content_type": "json"
-             }
-          }
-         */
+        String url = "https://api.github.com/repos/" + owner + "/" + repo + "/hooks";
+
+        WebClient webClient = WebClient.builder()
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .defaultHeader(HttpHeaders.ACCEPT, "application/vnd.github.v3+json")
+                .build();
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("name", "web");
+        requestBody.put("active", true);
+        requestBody.put("events", List.of("pull_request"));
+
+        Map<String, String> config = new HashMap<>();
+        config.put("url", webhookUrl); // ex: https://your-server.com/webhook/github
+        config.put("content_type", "json");
+        requestBody.put("config", config);
+
         return webClient.post()
-                .uri("/repos/{owner}/{repo}/hooks", owner, repo)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                .bodyValue(new WebhookRequest(webhookUrl))
+                .uri(url)
+                .bodyValue(requestBody)
                 .retrieve()
                 .bodyToMono(String.class);
     }
+
+    public Mono<String> assignReviewers(String accessToken, String owner, String repo, int prNumber, List<String> reviewers) {
+        String url = String.format("https://api.github.com/repos/%s/%s/pulls/%d/requested_reviewers", owner, repo, prNumber);
+
+        Map<String, Object> requestBody = Map.of("reviewers", reviewers);
+
+        return WebClient.builder()
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                .defaultHeader(HttpHeaders.ACCEPT, "application/vnd.github+json")
+                .build()
+                .post()
+                .uri(url)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(String.class);
+    }
+
+
+
 
     // 내부 DTO 클래스 - Webhook 등록을 위한 요청 바디
     public static class WebhookRequest {

@@ -1,3 +1,5 @@
+server:
+  forward-headers-strategy: framework
 spring:
   security:
     oauth2:
@@ -5,8 +7,9 @@ spring:
         registration:
           github:
             client-id: Ov23liwZDQRRgigb5nuV
-            client-secret: 62f466a69a50f21c1c26f6ee22dfe5ce255dbfeb
+            client-secret: 9950272d15a2146a5135e2dcfc11cd156c90f834
             scope: read:user, repo
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
         provider:
           github:
             authorization-uri: https://github.com/login/oauth/authorize
@@ -37,3 +40,6 @@ kafka:
   producer:
     key-serializer: org.apache.kafka.common.serialization.StringSerializer
     value-serializer: org.apache.kafka.common.serialization.StringSerializer
+webhook:
+  github:
+    url: https://4c33-220-70-7-63.ngrok-free.app/webhook/github
